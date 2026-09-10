@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && userDoc().role == 'admin';
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Users: create own profile on register; cannot escalate role
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isSelf(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.role == 'member'
+        && request.resource.data.active == true;
+      allow update: if isAdmin()
+        || (isSelf(uid)
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.active == resource.data.active
+            && request.resource.data.email == resource.data.email);
+      allow delete: if false;
+    }
+
+    // Submissions: members create pending only for themselves; no status/points tampering
+    match /dailySubmissions/{id} {
+      allow read: if signedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
+      // Creates/updates via Admin SDK API only
+      allow create, update, delete: if false;
+    }
+
+    match /eligibleDays/{id} {
+      allow read: if signedIn();
+      allow write: if false; // admin API only
+    }
+
+    match /monthlyChallenges/{month} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /correctionRequests/{id} {
+      allow read: if signedIn()
+        && (isAdmin() || resource.data.uid == request.auth.uid);
+      allow create, update, delete: if false;
+    }
+
+    match /auditLogs/{id} {
+      allow read: if isAdmin();
+      allow write: if false; // append via Admin SDK only
+    }
+
+    match /dinnerEvents/{month} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /participants/{uid} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+  }
+}
