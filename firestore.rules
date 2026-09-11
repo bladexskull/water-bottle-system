@@ -19,18 +19,14 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if signedIn();
-      allow create: if isSelf(uid)
-        && request.resource.data.uid == uid
-        && request.resource.data.role == 'member'
-        && request.resource.data.active == false
-        && request.resource.data.approvalStatus == 'pending';
+      // Profiles are created via Admin SDK (/api/me) so clients cannot escalate role
+      allow create, delete: if false;
       allow update: if isAdmin()
         || (isSelf(uid)
             && request.resource.data.role == resource.data.role
             && request.resource.data.active == resource.data.active
             && request.resource.data.approvalStatus == resource.data.approvalStatus
             && request.resource.data.email == resource.data.email);
-      allow delete: if false;
     }
 
     match /dailySubmissions/{id} {

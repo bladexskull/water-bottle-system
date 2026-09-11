@@ -17,8 +17,7 @@ import {
   signOut,
   updateProfile,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { getClientAuth, getClientDb, isFirebaseConfigured } from "./firebase/client";
+import { getClientAuth, isFirebaseConfigured } from "./firebase/client";
 import type { AppUser } from "./types";
 
 interface AuthContextValue {
@@ -35,6 +34,20 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+async function fetchProfile(token: string, name?: string): Promise<AppUser> {
+  const res = await fetch("/api/me", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(name ? { name } : {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Failed to load profile");
+  return data.user as AppUser;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const configured = isFirebaseConfigured();
   const [user, setUser] = useState<User | null>(null);
@@ -42,42 +55,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async (u: User) => {
-    const db = getClientDb();
-    const ref = doc(db, "users", u.uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      const data: AppUser = {
-        uid: u.uid,
-        name: u.displayName || u.email?.split("@")[0] || "Member",
-        email: u.email || "",
-        role: "member",
-        active: false,
-        approvalStatus: "pending",
-        createdAt: new Date().toISOString(),
-      };
-      await setDoc(ref, data);
-    }
-    try {
-      const token = await u.getIdToken();
-      const res = await fetch("/api/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          setProfile(data.user as AppUser);
-          return;
-        }
-      }
-    } catch {
-      // fall through
-    }
-    const again = await getDoc(ref);
-    const raw = again.data() as AppUser;
-    setProfile({
-      ...raw,
-      approvalStatus: raw.approvalStatus || (raw.active ? "approved" : "pending"),
-    });
+    const token = await u.getIdToken(true);
+    const userProfile = await fetchProfile(token, u.displayName || undefined);
+    setProfile(userProfile);
   }, []);
 
   useEffect(() => {
@@ -108,35 +88,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (name: string, email: string, password: string) => {
-    const cred = await createUserWithEmailAndPassword(getClientAuth(), email, password);
-    await updateProfile(cred.user, { displayName: name });
-    const data: AppUser = {
-      uid: cred.user.uid,
-      name,
-      email,
-      role: "member",
-      active: false,
-      approvalStatus: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    await setDoc(doc(getClientDb(), "users", cred.user.uid), data);
-    // Server may promote configured admin
-    try {
-      const token = await cred.user.getIdToken();
-      const res = await fetch("/api/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const body = await res.json();
-        if (body.user) {
-          setProfile(body.user as AppUser);
-          return;
-        }
-      }
-    } catch {
-      // ignore
-    }
-    setProfile(data);
+    const cred = await createUserWithEmailAndPassword(
+      getClientAuth(),
+      email.trim(),
+      password
+    );
+    await updateProfile(cred.user, { displayName: name.trim() });
+    // Profile is created server-side (Admin SDK) — avoids Firestore client rule failures
+    const token = await cred.user.getIdToken(true);
+    const userProfile = await fetchProfile(token, name.trim());
+    setProfile(userProfile);
   };
 
   const logout = async () => {
