@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, isApprovedMember } from "@/lib/auth-context";
 import { LoadingScreen } from "@/components/ui";
 
 export default function HomePage() {
@@ -14,6 +14,10 @@ export default function HomePage() {
     if (loading) return;
     if (!configured) return;
     if (user && profile) {
+      if (!isApprovedMember(profile)) {
+        router.replace("/pending");
+        return;
+      }
       router.replace(profile.role === "admin" ? "/admin" : "/member");
     }
   }, [user, profile, loading, configured, router]);

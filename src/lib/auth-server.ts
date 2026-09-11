@@ -10,7 +10,25 @@ export class AuthError extends Error {
   }
 }
 
-export async function verifyRequestUser(req: NextRequest): Promise<AppUser> {
+type VerifyOptions = {
+  /** Allow pending/rejected users (for /api/me + waiting UI only) */
+  allowPending?: boolean;
+};
+
+function ensureAdminPrivileges(user: AppUser): AppUser {
+  if (!isConfiguredAdmin(user.uid, user.email)) return user;
+  return {
+    ...user,
+    role: "admin",
+    active: true,
+    approvalStatus: "approved",
+  };
+}
+
+export async function verifyRequestUser(
+  req: NextRequest,
+  options: VerifyOptions = {}
+): Promise<AppUser> {
   const header = req.headers.get("authorization") || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) throw new AuthError("Missing auth token");
@@ -22,28 +40,55 @@ export async function verifyRequestUser(req: NextRequest): Promise<AppUser> {
 
   if (!snap.exists) {
     const email = decoded.email || "";
-    const role: Role = isConfiguredAdmin(decoded.uid, email) ? "admin" : "member";
+    const isAdmin = isConfiguredAdmin(decoded.uid, email);
     const user: AppUser = {
       uid: decoded.uid,
       name: decoded.name || email.split("@")[0] || "Member",
       email,
-      role,
-      active: true,
+      role: isAdmin ? "admin" : "member",
+      active: isAdmin,
+      approvalStatus: isAdmin ? "approved" : "pending",
       createdAt: new Date().toISOString(),
     };
     await ref.set(user);
+    if (!options.allowPending && !user.active) {
+      throw new AuthError("Waiting for admin approval", 403);
+    }
     return user;
   }
 
-  const user = snap.data() as AppUser;
-
-  // Keep role in sync with env-configured admin (server-side only)
-  if (isConfiguredAdmin(user.uid, user.email) && user.role !== "admin") {
-    await ref.update({ role: "admin" });
-    user.role = "admin";
+  let user = snap.data() as AppUser;
+  // Backfill older docs without approvalStatus
+  if (!user.approvalStatus) {
+    user.approvalStatus = user.active ? "approved" : "pending";
   }
 
-  if (!user.active) throw new AuthError("Account deactivated", 403);
+  const upgraded = ensureAdminPrivileges(user);
+  if (
+    upgraded.role !== user.role ||
+    upgraded.active !== user.active ||
+    upgraded.approvalStatus !== user.approvalStatus
+  ) {
+    await ref.update({
+      role: upgraded.role,
+      active: upgraded.active,
+      approvalStatus: upgraded.approvalStatus,
+    });
+    user = upgraded;
+  }
+
+  if (!options.allowPending) {
+    if (user.approvalStatus === "pending") {
+      throw new AuthError("Waiting for admin approval", 403);
+    }
+    if (user.approvalStatus === "rejected") {
+      throw new AuthError("Registration was rejected by admin", 403);
+    }
+    if (!user.active) {
+      throw new AuthError("Account deactivated", 403);
+    }
+  }
+
   return user;
 }
 

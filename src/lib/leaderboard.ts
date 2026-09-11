@@ -64,7 +64,9 @@ export async function computeLeaderboard(month = currentMonth()): Promise<Leader
   const challenge = await ensureMonth(month);
 
   const usersSnap = await db.collection("users").where("active", "==", true).get();
-  const users = usersSnap.docs.map((d) => d.data() as AppUser);
+  const users = usersSnap.docs
+    .map((d) => d.data() as AppUser)
+    .filter((u) => (u.approvalStatus || "approved") === "approved");
 
   const subsSnap = await db
     .collection("dailySubmissions")

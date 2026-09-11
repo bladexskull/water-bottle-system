@@ -1,5 +1,6 @@
 export type Role = "member" | "admin";
 export type SubmissionStatus = "pending" | "approved" | "rejected";
+export type RegistrationStatus = "pending" | "approved" | "rejected";
 export type MonthStatus = "open" | "closed";
 export type CorrectionStatus = "pending" | "approved" | "rejected";
 export type DinnerStatus = "draft" | "finalized";
@@ -9,7 +10,10 @@ export interface AppUser {
   name: string;
   email: string;
   role: Role;
+  /** false until admin approves registration (or if deactivated later) */
   active: boolean;
+  /** Registration gate: pending users can log in but cannot use the app */
+  approvalStatus: RegistrationStatus;
   createdAt: string;
 }
 

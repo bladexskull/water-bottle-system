@@ -42,7 +42,9 @@ export default function RegisterPage() {
         ← Water Bottle League
       </Link>
       <h1 className="font-display text-3xl font-bold text-cyan-950">Join the league</h1>
-      <p className="mt-2 text-sm text-cyan-800/70">Members start as regular players. Admin is set via env.</p>
+      <p className="mt-2 text-sm text-cyan-800/70">
+        Anyone can register. An admin must approve you before you can use the league.
+      </p>
       <form onSubmit={onSubmit} className="card mt-6 flex flex-col gap-4 p-6">
         <label className="text-sm font-medium">
           Name

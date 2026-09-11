@@ -51,12 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: u.displayName || u.email?.split("@")[0] || "Member",
         email: u.email || "",
         role: "member",
-        active: true,
+        active: false,
+        approvalStatus: "pending",
         createdAt: new Date().toISOString(),
       };
       await setDoc(ref, data);
     }
-    // Server upgrades configured admin and returns authoritative profile
     try {
       const token = await u.getIdToken();
       const res = await fetch("/api/me", {
@@ -70,10 +70,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch {
-      // fall through to Firestore read
+      // fall through
     }
     const again = await getDoc(ref);
-    setProfile(again.data() as AppUser);
+    const raw = again.data() as AppUser;
+    setProfile({
+      ...raw,
+      approvalStatus: raw.approvalStatus || (raw.active ? "approved" : "pending"),
+    });
   }, []);
 
   useEffect(() => {
@@ -111,10 +115,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       name,
       email,
       role: "member",
-      active: true,
+      active: false,
+      approvalStatus: "pending",
       createdAt: new Date().toISOString(),
     };
     await setDoc(doc(getClientDb(), "users", cred.user.uid), data);
+    // Server may promote configured admin
+    try {
+      const token = await cred.user.getIdToken();
+      const res = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const body = await res.json();
+        if (body.user) {
+          setProfile(body.user as AppUser);
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
     setProfile(data);
   };
 
@@ -143,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getIdToken,
       refreshProfile,
     }),
-    [user, profile, loading, configured, getIdToken]
+    [user, profile, loading, configured]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -167,4 +188,10 @@ export async function apiFetch(
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
+}
+
+export function isApprovedMember(profile: AppUser | null): boolean {
+  if (!profile) return false;
+  const status = profile.approvalStatus || (profile.active ? "approved" : "pending");
+  return profile.active && status === "approved";
 }

@@ -17,31 +17,30 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // Users: create own profile on register; cannot escalate role
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isSelf(uid)
         && request.resource.data.uid == uid
         && request.resource.data.role == 'member'
-        && request.resource.data.active == true;
+        && request.resource.data.active == false
+        && request.resource.data.approvalStatus == 'pending';
       allow update: if isAdmin()
         || (isSelf(uid)
             && request.resource.data.role == resource.data.role
             && request.resource.data.active == resource.data.active
+            && request.resource.data.approvalStatus == resource.data.approvalStatus
             && request.resource.data.email == resource.data.email);
       allow delete: if false;
     }
 
-    // Submissions: members create pending only for themselves; no status/points tampering
     match /dailySubmissions/{id} {
       allow read: if signedIn() && (isAdmin() || resource.data.uid == request.auth.uid);
-      // Creates/updates via Admin SDK API only
       allow create, update, delete: if false;
     }
 
     match /eligibleDays/{id} {
       allow read: if signedIn();
-      allow write: if false; // admin API only
+      allow write: if false;
     }
 
     match /monthlyChallenges/{month} {
@@ -57,7 +56,7 @@ service cloud.firestore {
 
     match /auditLogs/{id} {
       allow read: if isAdmin();
-      allow write: if false; // append via Admin SDK only
+      allow write: if false;
     }
 
     match /dinnerEvents/{month} {

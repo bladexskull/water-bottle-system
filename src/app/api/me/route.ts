@@ -5,8 +5,10 @@ import { currentMonth } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await verifyRequestUser(req);
-    await ensureMonth(currentMonth());
+    const user = await verifyRequestUser(req, { allowPending: true });
+    if (user.active && user.approvalStatus === "approved") {
+      await ensureMonth(currentMonth());
+    }
     return Response.json({ user });
   } catch (e) {
     return jsonError(e);

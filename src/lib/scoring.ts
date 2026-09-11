@@ -25,9 +25,11 @@ export function formatStrikeRate(sr: number): string {
 }
 
 function datesBetween(start: string, end: string): string[] {
+  if (!start || !end) return [];
   const out: string[] = [];
   let cur = parseISO(start);
   const last = parseISO(end);
+  if (Number.isNaN(cur.getTime()) || Number.isNaN(last.getTime())) return [];
   while (cur <= last) {
     out.push(format(cur, "yyyy-MM-dd"));
     cur = addDays(cur, 1);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, apiFetch } from "@/lib/auth-context";
+import { useAuth, apiFetch, isApprovedMember } from "@/lib/auth-context";
 import { Navbar } from "@/components/Navbar";
 import { BottleCounter } from "@/components/BottleCounter";
 import { LeaderboardTable } from "@/components/LeaderboardTable";
@@ -17,6 +17,7 @@ export default function MemberPage() {
   const [board, setBoard] = useState<LeaderboardResult | null>(null);
   const [today, setToday] = useState<DailySubmission | null>(null);
   const [bottles, setBottles] = useState(4);
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -43,8 +44,12 @@ export default function MemberPage() {
       router.replace("/login");
       return;
     }
+    if (profile && !isApprovedMember(profile)) {
+      router.replace("/pending");
+      return;
+    }
     refresh().catch((e) => setError(e.message));
-  }, [user, loading, configured, router, refresh]);
+  }, [user, profile, loading, configured, router, refresh]);
 
   async function submitToday() {
     setBusy(true);
@@ -54,10 +59,11 @@ export default function MemberPage() {
       const token = await getIdToken();
       await apiFetch("/api/submissions", token, {
         method: "POST",
-        body: JSON.stringify({ bottles }),
+        body: JSON.stringify({ bottles, note: note.trim() }),
       });
       setMessage("Submitted for approval");
       setShowSubmit(false);
+      setNote("");
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Submit failed");
@@ -91,10 +97,13 @@ export default function MemberPage() {
   }
 
   if (loading || !profile) return <LoadingScreen />;
+  if (!isApprovedMember(profile)) return <LoadingScreen message="Redirecting…" />;
+  if (!board && !error) return <LoadingScreen message="Loading your dashboard…" />;
 
   const me = board?.members.find((m) => m.uid === profile.uid);
   const month = board?.month || "";
   const bottleMl = board?.bottleSizeMl || 1000;
+  const daysLeft = month ? daysRemainingInMonth(month) : 0;
 
   return (
     <div className="min-h-screen pb-16">
@@ -133,7 +142,7 @@ export default function MemberPage() {
           <StatCard
             label="Eligible Days"
             value={`${me?.eligibleDays ?? 0}`}
-            hint={`${daysRemainingInMonth(month)} days left in month`}
+            hint={month ? `${daysLeft} days left in month` : undefined}
           />
         </div>
 
@@ -148,6 +157,9 @@ export default function MemberPage() {
                 </span>
                 {today ? ` · ${today.bottles} bottles` : ""}
               </p>
+              {today?.note ? (
+                <p className="mt-1 text-sm text-cyan-800/70">Note: {today.note}</p>
+              ) : null}
               {today?.status === "rejected" && (
                 <p className="mt-1 text-sm text-rose-700">
                   Rejected: {today.rejectionReason}
@@ -191,6 +203,17 @@ export default function MemberPage() {
               Each bottle = {bottleMl} ml. Don&apos;t force unsafe intake.
             </p>
             <BottleCounter value={bottles} onChange={setBottles} />
+            <label className="block text-sm">
+              Note for admin (optional)
+              <textarea
+                className="input mt-1"
+                rows={2}
+                maxLength={200}
+                placeholder="e.g. filled at office cooler"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
+            </label>
             <div className="flex gap-3">
               <button
                 className="flex-1 rounded-xl border border-cyan-800/15 py-3 font-medium"

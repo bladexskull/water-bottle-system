@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, apiFetch } from "@/lib/auth-context";
+import { useAuth, apiFetch, isApprovedMember } from "@/lib/auth-context";
 import { Navbar } from "@/components/Navbar";
 import { LeaderboardTable } from "@/components/LeaderboardTable";
 import { LoadingScreen, StatCard } from "@/components/ui";
@@ -101,6 +101,10 @@ export default function AdminPage() {
       router.replace("/login");
       return;
     }
+    if (profile && !isApprovedMember(profile)) {
+      router.replace("/pending");
+      return;
+    }
     if (profile && profile.role !== "admin") {
       router.replace("/member");
       return;
@@ -133,6 +137,9 @@ export default function AdminPage() {
     .filter((m) => m.isEligible)
     .slice()
     .reverse()[0];
+  const pendingRegs = members.filter(
+    (m) => (m.approvalStatus || (m.active ? "approved" : "pending")) === "pending"
+  );
 
   return (
     <div className="min-h-screen pb-20">
@@ -162,13 +169,19 @@ export default function AdminPage() {
             >
               {t.label}
               {t.id === "approvals" && approvals.length > 0 ? ` (${approvals.length})` : ""}
+              {t.id === "members" && pendingRegs.length > 0 ? ` (${pendingRegs.length} new)` : ""}
             </button>
           ))}
         </div>
 
         {tab === "overview" && board && (
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
-            <StatCard label="Pending approvals" value={approvals.length} accent="amber" />
+            <StatCard
+              label="Pending registrations"
+              value={pendingRegs.length}
+              accent="amber"
+            />
+            <StatCard label="Pending bottle approvals" value={approvals.length} accent="amber" />
             <StatCard
               label="Current leader"
               value={leader?.name || "—"}
@@ -189,7 +202,7 @@ export default function AdminPage() {
         {tab === "approvals" && (
           <div className="mt-4 space-y-3">
             {approvals.length === 0 && (
-              <p className="text-sm text-cyan-800/60">No pending approvals</p>
+              <p className="text-sm text-cyan-800/60">No pending bottle approvals</p>
             )}
             {approvals.map((a) => (
               <div key={a.id} className="card p-4">
@@ -201,6 +214,11 @@ export default function AdminPage() {
                     <p className="text-sm text-cyan-800/70">
                       {a.bottles} bottles · Pending
                     </p>
+                    {a.note ? (
+                      <p className="mt-1 text-sm text-cyan-900/80">
+                        Note: <em>{a.note}</em>
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <button
@@ -259,6 +277,57 @@ export default function AdminPage() {
 
         {tab === "members" && (
           <div className="mt-4 space-y-4">
+            {pendingRegs.length > 0 && (
+              <div className="space-y-2">
+                <h2 className="font-display text-lg font-semibold">Pending registrations</h2>
+                {pendingRegs.map((m) => (
+                  <div key={m.uid} className="card flex flex-wrap items-center justify-between gap-3 p-3">
+                    <div>
+                      <p className="font-medium">{m.name}</p>
+                      <p className="text-xs text-cyan-800/50">{m.email}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-primary py-2 text-sm"
+                        disabled={busy}
+                        onClick={() =>
+                          run(async () => {
+                            const t = await token();
+                            await apiFetch("/api/admin/members", t, {
+                              method: "POST",
+                              body: JSON.stringify({
+                                action: "approve_registration",
+                                uid: m.uid,
+                              }),
+                            });
+                          })
+                        }
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="btn-danger text-sm"
+                        disabled={busy}
+                        onClick={() =>
+                          run(async () => {
+                            const t = await token();
+                            await apiFetch("/api/admin/members", t, {
+                              method: "POST",
+                              body: JSON.stringify({
+                                action: "reject_registration",
+                                uid: m.uid,
+                              }),
+                            });
+                          })
+                        }
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <form
               className="card grid gap-3 p-4 sm:grid-cols-4"
               onSubmit={(e) => {
@@ -309,13 +378,22 @@ export default function AdminPage() {
               </button>
             </form>
             <div className="space-y-2">
-              {members.map((m) => (
+              {members.map((m) => {
+                const status =
+                  m.approvalStatus || (m.active ? "approved" : "pending");
+                return (
                 <div key={m.uid} className="card flex items-center justify-between gap-3 p-3">
                   <div>
                     <p className="font-medium">
                       {m.name}{" "}
                       <span className="text-xs uppercase text-cyan-700/60">{m.role}</span>
-                      {!m.active && (
+                      {status === "pending" && (
+                        <span className="ml-2 text-xs text-amber-700">pending approval</span>
+                      )}
+                      {status === "rejected" && (
+                        <span className="ml-2 text-xs text-rose-600">rejected</span>
+                      )}
+                      {status === "approved" && !m.active && (
                         <span className="ml-2 text-xs text-rose-600">inactive</span>
                       )}
                     </p>
@@ -323,7 +401,7 @@ export default function AdminPage() {
                   </div>
                   <button
                     className="rounded-lg border border-cyan-900/15 px-3 py-1.5 text-xs font-semibold"
-                    disabled={busy || m.role === "admin"}
+                    disabled={busy || m.role === "admin" || status === "pending"}
                     onClick={() =>
                       run(async () => {
                         const t = await token();
@@ -340,7 +418,8 @@ export default function AdminPage() {
                     {m.active ? "Deactivate" : "Reactivate"}
                   </button>
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}
