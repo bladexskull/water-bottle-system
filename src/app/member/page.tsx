@@ -102,7 +102,6 @@ export default function MemberPage() {
 
   const me = board?.members.find((m) => m.uid === profile.uid);
   const month = board?.month || "";
-  const bottleMl = board?.bottleSizeMl || 1000;
   const daysLeft = month ? daysRemainingInMonth(month) : 0;
 
   return (
@@ -111,9 +110,7 @@ export default function MemberPage() {
       <main className="mx-auto max-w-5xl space-y-6 px-4 py-6">
         <div>
           <h1 className="font-display text-2xl font-bold text-cyan-950">Hey, {profile.name}</h1>
-          <p className="text-sm text-cyan-800/60">
-            {month} · Bottle size {bottleMl} ml · Game tracking only, not medical advice
-          </p>
+          <p className="text-sm text-cyan-800/60">{month || "This month"}</p>
         </div>
 
         {(error || message) && (
@@ -199,9 +196,6 @@ export default function MemberPage() {
             <h2 className="font-display text-center text-xl font-semibold">
               How many bottles did you fill today?
             </h2>
-            <p className="text-center text-xs text-cyan-800/50">
-              Each bottle = {bottleMl} ml. Don&apos;t force unsafe intake.
-            </p>
             <BottleCounter value={bottles} onChange={setBottles} />
             <label className="block text-sm">
               Note for admin (optional)

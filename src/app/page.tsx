@@ -52,9 +52,6 @@ export default function HomePage() {
       <p className="mt-3 text-cyan-800/70">
         Private monthly hydration competition. Submit daily bottles. Highest strike rate wins dinner.
       </p>
-      <p className="mt-2 text-xs text-cyan-700/50">
-        Tracking game only — not medical advice. Bottle size shown in-app (default 1L).
-      </p>
       <div className="mt-8 flex flex-col gap-3 sm:flex-row">
         <Link href="/login" className="btn-primary text-center">
           Login
